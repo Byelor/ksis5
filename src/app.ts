@@ -5,7 +5,6 @@ const app = express();
 const __dirname = import.meta.dirname;
 const __filesdir = path.join(__dirname, "files");
 
-console.log(__filesdir);
 
 function getBasePath(filePath: any){
     if(filePath === undefined || filePath.length === 0)
@@ -21,24 +20,21 @@ function getBasePath(filePath: any){
 }
 
 app.use("/", (req, res, next)=>{
-          console.log(req.headers);
-        console.log(req.body);
     next();
 })
 app.get(/files\/(.*)/, (req, res)=>{
+
     const filePath = req.params[0];
-    console.log(filePath);
     const basePath = getBasePath(filePath);
-    console.log(basePath);
+
     if(basePath && fs.existsSync(path.join(__filesdir, basePath))){
     res.download(path.join(__filesdir, basePath), ()=>{
         
-        console.log(`file: ${filePath} was sent!`)
+        console.log(`file: ${path.basename(basePath)} was sent!`)
         res.end();
     });
     }
     else{
-    console.log("There is no file with this path!");
     res.send("There is no file with this path!");
     }
 });
@@ -46,9 +42,8 @@ app.get(/files\/(.*)/, (req, res)=>{
 
     app.post(/files\/(.*)/, (req, res)=>{
 
-    console.log("put method starts");
     const basePath = getBasePath(req.params[0]);
-    console.log(basePath);
+      
     try{
     if(basePath)
     {
@@ -73,6 +68,32 @@ app.get(/files\/(.*)/, (req, res)=>{
 
 });
 
+app.put(/files\/(.*)/, async (req, res)=>{
+    const copyTo = getBasePath(req.params[0]) as string;
+    console.log("CopyTo: ", copyTo);
+    const copyFrom = req.headers["x-copy-from"];
+    console.log("CopyFrom: ", copyFrom);
+    const folder = path.join(__filesdir, path.dirname(copyTo));
+    try{
+    await fs.mkdir(folder, {recursive: true}, ()=>{
+        console.log(`${path.dirname(copyTo)} folder was created!`);
+    });
+    const fromStream = fs.createReadStream(path.join(__filesdir, copyFrom as string));
+    const toStream = fs.createWriteStream(path.join(__filesdir, copyTo as string));
+    fromStream.pipe(toStream);
+    toStream.on("finish", ()=>{
+        console.log("succesful!");
+        res.send("succesful!");
+    });
+    toStream.on("error", (error)=>{
+        console.log("error: ", error);
+    })
+    }
+    catch(error){
+        console.log("error");
+    }
+
+});
 
 
 export default app;
