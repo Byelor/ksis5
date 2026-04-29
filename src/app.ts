@@ -5,7 +5,13 @@ const app = express();
 const __dirname = import.meta.dirname;
 const __filesdir = path.join(__dirname, "files");
 
+// создана ли папка с файлами
+if(!fs.existsSync(__filesdir))
+{
+    fs.mkdirSync(__filesdir);
+}
 
+//функция, возвращающая нормализованную строку
 function getBasePath(filePath: any){
     if(filePath === undefined || filePath.length === 0)
     {
@@ -19,9 +25,7 @@ function getBasePath(filePath: any){
     return undefined;
 }
 
-app.use("/", (req, res, next)=>{
-    next();
-})
+//обработка GET запросов: загрузка файлов из сервера
 app.get(/files\/(.*)/, (req, res)=>{
 
     const filePath = req.params[0];
@@ -39,11 +43,14 @@ app.get(/files\/(.*)/, (req, res)=>{
     }
 });
 
-
+    //обработка post: выгрузка файлов в сервер
     app.post(/files\/(.*)/, (req, res)=>{
 
-    const basePath = getBasePath(req.params[0]);
-      
+    const basePath = getBasePath(req.params[0]) as string;
+    const folder = path.join(__filesdir, path.dirname(basePath));
+
+    fs.mkdirSync(folder, {recursive: true});
+
     try{
     if(basePath)
     {
@@ -54,7 +61,7 @@ app.get(/files\/(.*)/, (req, res)=>{
             res.send("good");
         });
         ws.on("error", (error)=>{
-            console.log(`error ocurred: ${error}`);
+            console.log(`ws error ocurred: ${error}`);
             res.send("baaad");
         })
     }
@@ -67,17 +74,18 @@ app.get(/files\/(.*)/, (req, res)=>{
     }
 
 });
+//обработка put с заголовком x-copy-from
+app.put(/files\/(.*)/, async (req, res, next)=>{
 
-app.put(/files\/(.*)/, async (req, res)=>{
-    const copyTo = getBasePath(req.params[0]) as string;
-    console.log("CopyTo: ", copyTo);
     const copyFrom = req.headers["x-copy-from"];
-    console.log("CopyFrom: ", copyFrom);
+    if(!copyFrom){
+        next();
+        return;
+    }
+    const copyTo = getBasePath(req.params[0]) as string;
     const folder = path.join(__filesdir, path.dirname(copyTo));
     try{
-    await fs.mkdir(folder, {recursive: true}, ()=>{
-        console.log(`${path.dirname(copyTo)} folder was created!`);
-    });
+    fs.mkdirSync(folder, {recursive: true});
     const fromStream = fs.createReadStream(path.join(__filesdir, copyFrom as string));
     const toStream = fs.createWriteStream(path.join(__filesdir, copyTo as string));
     fromStream.pipe(toStream);
