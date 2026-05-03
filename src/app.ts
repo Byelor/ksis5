@@ -24,23 +24,65 @@ function getBasePath(filePath: any){
     }
     return undefined;
 }
-
-//обработка GET запросов: загрузка файлов из сервера
-app.get(/files\/(.*)/, (req, res)=>{
-
+app.get(/view\/files\/(.*)/, (req, res, next)=>{
     const filePath = req.params[0];
-    const basePath = getBasePath(filePath);
+    const basePath = getBasePath(filePath) || "";
+    console.log(basePath);
+    const fullPath = path.join(__filesdir, basePath );
+    console.log("fullPath: ", fullPath);
+    if(fs.existsSync(fullPath))
+    {
+        const dir = (fs.readdirSync(fullPath, {recursive: true, encoding: "utf-8"}));
+        let answer = "";
+        for(const el of dir){
 
-    if(basePath && fs.existsSync(path.join(__filesdir, basePath))){
-    res.download(path.join(__filesdir, basePath), ()=>{
-        
-        console.log(`file: ${path.basename(basePath)} was sent!`)
-        res.end();
-    });
+            const relativePath = path.join(basePath, el);
+
+            if(fs.statSync(path.join(fullPath, el)).isFile())
+            {
+            answer += `<a href="/files/${relativePath}">${el}</a><br/>`;
+            }
+            else{
+                answer += `<a href="/view/files/${relativePath}">${relativePath}</a><br/>`
+            }
+        }
+        res.send(answer);
     }
     else{
-    res.send("There is no file with this path!");
+        res.status(404);
+        throw new Error("There is no file or directory with this path!");
     }
+});
+app.get(/ls\/files\/(.*)/, (req, res)=>{
+    const filePath = req.params[0];
+    const basePath = getBasePath(filePath) || "";
+    console.log(basePath);
+    
+});
+
+//обработка GET запросов: загрузка файлов из сервера
+app.get(/files\/(.*)/, (req, res, next)=>{
+
+    const filePath = req.params[0];
+    const basePath = getBasePath(filePath) || "";
+    console.log(basePath);
+    if(fs.existsSync(path.join(__filesdir, basePath))){
+
+        if(fs.statSync(path.join(__filesdir, basePath)).isFile()){
+            res.download(path.join(__filesdir, basePath), ()=>{
+                
+                console.log(`file: ${path.basename(basePath)} was sent!`)
+                res.end();
+            });
+        }
+        else{
+            res.json(fs.readdirSync(path.join(__filesdir, basePath)));
+        }
+    }
+    else{
+            res.status(404);
+            throw new Error("There is no file or directory with this path!");
+        }
 });
 
     //обработка post: выгрузка файлов в сервер
@@ -51,7 +93,6 @@ app.get(/files\/(.*)/, (req, res)=>{
 
     fs.mkdirSync(folder, {recursive: true});
 
-    try{
     if(basePath)
     {
     const ws = fs.createWriteStream(path.join(__filesdir, basePath));
@@ -61,17 +102,15 @@ app.get(/files\/(.*)/, (req, res)=>{
             res.send("good");
         });
         ws.on("error", (error)=>{
-            console.log(`ws error ocurred: ${error}`);
-            res.send("baaad");
+            res.status(500)
+            throw new Error("Error on server side!");
         })
     }
     else{
-        res.send("error");
+
+        throw new Error("There is no file or directory with this path!");
     }
-}
-    catch(error){
-        console.log(`error ocurred ${error}`);
-    }
+
 
 });
 //обработка put с заголовком x-copy-from
@@ -79,11 +118,17 @@ app.put(/files\/(.*)/, async (req, res, next)=>{
 
     const copyFrom = req.headers["x-copy-from"];
     if(!copyFrom){
-        next();
-        return;
+        res.status(404);
+        throw new Error("Invalid copyFrom file!");
     }
-    const copyTo = getBasePath(req.params[0]) as string;
+    const copyTo = getBasePath(req.params[0]);
+    if(!copyTo)
+    {
+        res.status(404);
+        throw new Error("Invalid copyTo file!");
+    }
     const folder = path.join(__filesdir, path.dirname(copyTo));
+
     try{
     fs.mkdirSync(folder, {recursive: true});
     const fromStream = fs.createReadStream(path.join(__filesdir, copyFrom as string));
@@ -93,15 +138,19 @@ app.put(/files\/(.*)/, async (req, res, next)=>{
         console.log("succesful!");
         res.send("succesful!");
     });
-    toStream.on("error", (error)=>{
-        console.log("error: ", error);
-    })
     }
     catch(error){
-        console.log("error");
+        res.status(500);
+        throw new Error("Error on server side!");
     }
 
 });
+import type { ErrorRequestHandler } from "express";
+const errorHandler: ErrorRequestHandler = (err, req, res, next)=>{
+    console.log(err);
+    res.send(`error was occurred: ${err}`);
+}
+app.use(errorHandler);
 
 
 export default app;
