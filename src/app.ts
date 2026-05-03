@@ -13,26 +13,35 @@ if(!fs.existsSync(__filesdir))
 
 //функция, возвращающая нормализованную строку
 function getBasePath(filePath: any){
-    if(filePath === undefined || filePath.length === 0)
+    if(filePath === undefined)
     {
-        return undefined;
+        return "";
     }
     const basePath = path.normalize(filePath);
-    if(basePath)
-    {
-        return basePath;
-    }
-    return undefined;
+    
+    return basePath;
 }
-app.get(/view\/files\/(.*)/, (req, res, next)=>{
+const checkDir = (req: express.Request, res: express.Response, next: express.NextFunction)=>{
     const filePath = req.params[0];
-    const basePath = getBasePath(filePath) || "";
-    console.log(basePath);
-    const fullPath = path.join(__filesdir, basePath );
-    console.log("fullPath: ", fullPath);
-    if(fs.existsSync(fullPath))
+    const basePath = getBasePath(filePath);
+     const fullPath = path.join(__filesdir, basePath );
+    if(!fs.existsSync(fullPath))
     {
-        const dir = (fs.readdirSync(fullPath, {recursive: true, encoding: "utf-8"}));
+        res.status(404);
+        throw (new Error("There is no file or directory with this path!"));
+    }
+    next();
+}
+
+app.get("/", (req, res)=>{
+    res.redirect("view/files/");
+});
+app.get(/view\/files\/(.*)/, checkDir, (req, res, next)=>{
+    const filePath = req.params[0];
+    const basePath = getBasePath(filePath);
+    const fullPath = path.join(__filesdir, basePath );
+
+        const dir = (fs.readdirSync(fullPath, {encoding: "utf-8"}));
         let answer = "";
         for(const el of dir){
 
@@ -47,26 +56,13 @@ app.get(/view\/files\/(.*)/, (req, res, next)=>{
             }
         }
         res.send(answer);
-    }
-    else{
-        res.status(404);
-        throw new Error("There is no file or directory with this path!");
-    }
-});
-app.get(/ls\/files\/(.*)/, (req, res)=>{
-    const filePath = req.params[0];
-    const basePath = getBasePath(filePath) || "";
-    console.log(basePath);
-    
 });
 
 //обработка GET запросов: загрузка файлов из сервера
-app.get(/files\/(.*)/, (req, res, next)=>{
+app.get(/files\/(.*)/, checkDir, (req, res, next)=>{
 
     const filePath = req.params[0];
-    const basePath = getBasePath(filePath) || "";
-    console.log(basePath);
-    if(fs.existsSync(path.join(__filesdir, basePath))){
+    const basePath = getBasePath(filePath);
 
         if(fs.statSync(path.join(__filesdir, basePath)).isFile()){
             res.download(path.join(__filesdir, basePath), ()=>{
@@ -78,17 +74,12 @@ app.get(/files\/(.*)/, (req, res, next)=>{
         else{
             res.json(fs.readdirSync(path.join(__filesdir, basePath)));
         }
-    }
-    else{
-            res.status(404);
-            throw new Error("There is no file or directory with this path!");
-        }
 });
 
     //обработка post: выгрузка файлов в сервер
-    app.post(/files\/(.*)/, (req, res)=>{
+    app.post(/files\/(.*)/, (req, res, next)=>{
 
-    const basePath = getBasePath(req.params[0]) as string;
+    const basePath = getBasePath(req.params[0]);
     const folder = path.join(__filesdir, path.dirname(basePath));
 
     fs.mkdirSync(folder, {recursive: true});
@@ -102,30 +93,31 @@ app.get(/files\/(.*)/, (req, res, next)=>{
             res.send("good");
         });
         ws.on("error", (error)=>{
-            res.status(500)
-            throw new Error("Error on server side!");
+            res.status(500);
+            return next(error);
         })
     }
     else{
-
-        throw new Error("There is no file or directory with this path!");
+        res.status(400);
+        return next(new Error("choose file to save!"));
     }
 
 
 });
+
 //обработка put с заголовком x-copy-from
 app.put(/files\/(.*)/, async (req, res, next)=>{
 
     const copyFrom = req.headers["x-copy-from"];
     if(!copyFrom){
         res.status(404);
-        throw new Error("Invalid copyFrom file!");
+        return next(new Error("Invalid copyFrom file!"));
     }
     const copyTo = getBasePath(req.params[0]);
     if(!copyTo)
     {
         res.status(404);
-        throw new Error("Invalid copyTo file!");
+        return next(new Error("Invalid copyTo file!"));
     }
     const folder = path.join(__filesdir, path.dirname(copyTo));
 
@@ -141,15 +133,27 @@ app.put(/files\/(.*)/, async (req, res, next)=>{
     }
     catch(error){
         res.status(500);
-        throw new Error("Error on server side!");
+        return next(new Error("Error on server side!"));
     }
 
 });
+
+app.delete(/files\/(.*)/, checkDir, async(req, res, next)=>{
+    const filePath = req.params[0];
+    const basePath = getBasePath(filePath);
+    const fullPath = path.join(__filesdir, basePath );
+
+    fs.rmSync(fullPath, {recursive: true});
+    res.send(`file/dir ${basePath} was deleted!`);
+});
+
 import type { ErrorRequestHandler } from "express";
 const errorHandler: ErrorRequestHandler = (err, req, res, next)=>{
-    console.log(err);
+    console.log(`error was occured: ${err}`);
     res.send(`error was occurred: ${err}`);
 }
+
+
 app.use(errorHandler);
 
 
