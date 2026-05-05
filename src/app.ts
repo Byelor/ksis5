@@ -117,7 +117,7 @@ app.put(/files\/(.*)/, async (req, res, next)=>{
     fromStream.pipe(toStream);
     toStream.on("finish", ()=>{
         console.log("succesful!");
-        res.send("succesful!");
+        res.status(201).send("succesful!");
     });
     }
     catch(error){
